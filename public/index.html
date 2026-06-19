@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clover Checkout</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 40px 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .logo-icon {
+      width: 40px; height: 40px; border-radius: 8px;
+      background: #1da462; display: grid; place-items: center;
+    }
+    .logo-icon svg { width: 22px; height: 22px; fill: #fff; }
+    h1 { font-size: 20px; font-weight: 700; color: #111; }
+
+    /* Auth banner */
+    #auth-banner {
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    #auth-banner.connected    { background: #e8f7ee; color: #1a7040; border: 1px solid #b2dfca; }
+    #auth-banner.disconnected { background: #fff4e5; color: #8a5700; border: 1px solid #ffd07a; }
+    #auth-banner a { color: inherit; font-weight: 700; }
+
+    /* Form fields */
+    label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
+    input[type="text"], input[type="number"] {
+      width: 100%; padding: 10px 12px;
+      border: 1.5px solid #dde1e7; border-radius: 8px;
+      font-size: 15px; color: #111; background: #fafbfc;
+      transition: border-color .2s;
+      margin-bottom: 18px;
+    }
+    input:focus { outline: none; border-color: #1da462; background: #fff; }
+    .hint { font-size: 12px; color: #888; margin-top: -14px; margin-bottom: 18px; }
+
+    /* Submit button */
+    button[type="submit"] {
+      width: 100%; padding: 13px;
+      background: #1da462; color: #fff;
+      border: none; border-radius: 8px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      transition: background .2s, transform .1s;
+      margin-top: 4px;
+    }
+    button[type="submit"]:hover    { background: #178f54; }
+    button[type="submit"]:active   { transform: scale(0.99); }
+    button[type="submit"]:disabled { background: #a0c8b3; cursor: not-allowed; }
+
+    /* Result box */
+    #result {
+      margin-top: 24px;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      display: none;
+    }
+    #result.success { background: #e8f7ee; border: 1px solid #b2dfca; color: #1a5c35; }
+    #result.error   { background: #fdecea; border: 1px solid #f5b7b1; color: #7b1c1c; }
+    #result h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+
+    .tx-row {
+      display: flex; justify-content: space-between;
+      padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,0.07);
+    }
+    .tx-row:last-child { border-bottom: none; }
+    .tx-label { color: #555; }
+    .tx-value { font-weight: 600; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; }
+    .badge.SUCCESS { background: #c6f0d5; color: #1a5c35; }
+    .badge.FAIL    { background: #fdd; color: #7b1c1c; }
+    .badge.UNKNOWN { background: #eee; color: #555; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+
+  <!-- Logo -->
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10
+        10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"/></svg>
+    </div>
+    <h1>Clover Checkout</h1>
+  </div>
+
+  <!-- Auth Status Banner -->
+  <div id="auth-banner" class="disconnected">
+    ⚠️ Not connected to Clover. <a href="/auth/login">Click here to authenticate →</a>
+  </div>
+
+  <!-- Checkout Form: Amount + Description + Submit -->
+  <form id="checkout-form">
+    <label for="description">Item Description</label>
+    <input type="text" id="description" name="description"
+           placeholder="e.g. Premium Widget" required />
+
+    <label for="amount">Amount (USD)</label>
+    <input type="number" id="amount" name="amount"
+           placeholder="10.00" min="0.01" step="0.01" required />
+    <p class="hint">Enter amount in dollars. $10.00 = 1000 cents sent to Clover.</p>
+
+    <button type="submit" id="pay-btn">Pay Now</button>
+  </form>
+
+  <!-- Payment Result -->
+  <div id="result"></div>
+
+</div>
+
+<script>
+  // ── Check auth status on page load ──────────────────────
+  async function checkAuth() {
+    try {
+      const res = await fetch('/auth/status');
+      const data = await res.json();
+      const banner = document.getElementById('auth-banner');
+      if (data.authenticated) {
+        banner.className = 'connected';
+        banner.innerHTML = '✅ Connected as Merchant <strong>' + data.merchantId +
+          '</strong> &nbsp;·&nbsp; <a href="/auth/logout">Logout</a>';
+      }
+    } catch (e) { /* stays disconnected */ }
+  }
+
+  // Clear ?auth=success from URL after OAuth redirect
+  if (new URLSearchParams(location.search).get('auth') === 'success') {
+    history.replaceState({}, '', '/');
+  }
+  checkAuth();
+
+  // ── Form submission — calls POST /api/checkout ──────────
+  document.getElementById('checkout-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('pay-btn');
+    var resultEl = document.getElementById('result');
+
+    var payload = {
+      amount:      document.getElementById('amount').value,
+      description: document.getElementById('description').value,
+    };
+
+    // Show loading spinner
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Processing…';
+    resultEl.style.display = 'none';
+
+    try {
+      var res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      var data = await res.json();
+
+      if (res.ok && data.success) {
+        var tx = data.transaction;
+        var badgeClass = tx.status === 'SUCCESS' ? 'SUCCESS'
+                       : tx.status === 'FAIL' ? 'FAIL' : 'UNKNOWN';
+
+        resultEl.className = 'success';
+        resultEl.innerHTML =
+          '<h3>✅ Payment Complete</h3>' +
+          '<div class="tx-row"><span class="tx-label">Status</span>' +
+            '<span class="badge ' + badgeClass + '">' + tx.status + '</span></div>' +
+          '<div class="tx-row"><span class="tx-label">Amount</span>' +
+            '<span class="tx-value">' + tx.amount + '</span></div>' +
+          '<div class="tx-row"><span class="tx-label">Description</span>' +
+            '<span class="tx-value">' + tx.description + '</span></div>' +
+          '<div class="tx-row"><span class="tx-label">Order ID</span>' +
+            '<span class="tx-value">' + tx.orderId + '</span></div>' +
+          '<div class="tx-row"><span class="tx-label">Payment ID</span>' +
+            '<span class="tx-value">' + tx.paymentId + '</span></div>' +
+          '<div class="tx-row"><span class="tx-label">Timestamp</span>' +
+            '<span class="tx-value">' + new Date(tx.createdAt).toLocaleString() + '</span></div>';
+      } else {
+        throw data;
+      }
+    } catch (err) {
+      // Handle expired token — prompt re-login
+      if (err.error === 'Session expired' || err.loginUrl) {
+        resultEl.className = 'error';
+        resultEl.innerHTML = '<h3>⏱ Session Expired</h3>' +
+          '<p>Your Clover token expired. <a href="/auth/login">Click here to log in again →</a></p>';
+        resultEl.style.display = 'block';
+        document.getElementById('auth-banner').className = 'disconnected';
+        document.getElementById('auth-banner').innerHTML =
+          '⚠️ Session expired. <a href="/auth/login">Log in again →</a>';
+        btn.disabled = false;
+        btn.innerHTML = 'Pay Now';
+        return;
+      }
+
+      // Handle other errors
+      resultEl.className = 'error';
+      var msg = err.details
+        ? (typeof err.details === 'string' ? err.details : JSON.stringify(err.details, null, 2))
+        : (err.error || 'Unknown error');
+      resultEl.innerHTML = '<h3>❌ Payment Failed</h3>' +
+        '<pre style="white-space:pre-wrap">' + msg + '</pre>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Pay Now';
+      resultEl.style.display = 'block';
+    }
+  });
+</script>
+</body>
+</html>
