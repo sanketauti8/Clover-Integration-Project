@@ -42,21 +42,6 @@ This project implements the following documented Clover API flow:
 
 ---
 
-## Official API References
-
-| Endpoint | Documentation |
-|---|---|
-| OAuth2 | https://docs.clover.com/dev/docs/oauth-flows-in-sandbox |
-| Create order | https://docs.clover.com/dev/reference/ordercreateorder |
-| Add line item | https://docs.clover.com/dev/reference/ordercreatelineitemsfororder |
-| Tokenize card | https://docs.clover.com/dev/docs/ecommerce-api-payments-flow |
-| Pay for order | https://docs.clover.com/dev/reference/postordersidpay |
-| Get order | https://docs.clover.com/dev/reference/ordergetorder |
-| Get payment | https://docs.clover.com/dev/reference/paygetpayment |
-| Test cards | https://docs.clover.com/dev/docs/test-card-numbers |
-
----
-
 ## Setup
 
 ### Prerequisites
