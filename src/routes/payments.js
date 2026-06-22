@@ -2,15 +2,15 @@
  * routes/payments.js — Payment API Routes
  *
  * All routes require an authenticated session (enforced by requireAuth).
- * The access token for Clover API calls is sourced from the server-side
- * session, set during the OAuth2 callback.
+ * The access token for Clover API calls is sourced from CLOVER_API_TOKEN
+ * environment variable (merchant API token from Clover dashboard).
  *
  * Endpoints:
  *   POST /api/checkout           → Full flow: create order + line item + payment
  *   POST /api/orders             → Create an empty order
  *   GET  /api/orders/:id         → Get order details (with line items)
  *   POST /api/orders/:id/items   → Add a line item to an existing order
- *   POST /api/payments           → Create a payment against an existing order
+ *   POST /api/payments           → Tokenize test card + pay an existing order
  *   GET  /api/payments/:id       → Get payment status
  */
 
@@ -36,13 +36,13 @@ function parseToCents(amount) {
 }
 
 /**
- * Helper — Gets the Clover access token from the session.
- * Token is set during OAuth callback and stored server-side.
+ * Helper — Gets the Clover API token.
+ * Uses the merchant API token from .env (required for sandbox REST API calls).
+ * Falls back to the OAuth session token if API token is not set.
  */
 function getAccessToken(req) {
-  return req.session.accessToken;
+  return process.env.CLOVER_API_TOKEN || req.session.accessToken;
 }
-
 
 // ─────────────────────────────────────────────────────────────
 //  POST /api/checkout
@@ -50,7 +50,8 @@ function getAccessToken(req) {
 //  One-shot endpoint that runs the complete payment flow:
 //    Step 1: Create a new order
 //    Step 2: Add the item as a line item (product name + price)
-//    Step 3: Process the payment using a test card
+//    Step 3: Tokenize a Clover sandbox test card
+//    Step 4: Pay the order using the single-use source token
 //
 //  Request body: { "amount": 22.00, "description": "Wireless Mouse" }
 //  Response:     { success, transaction: { orderId, paymentId, status, ... } }
@@ -59,6 +60,8 @@ router.post('/checkout', async (req, res) => {
   const { amount, description } = req.body;
   const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
+  const ecommercePublicToken = process.env.CLOVER_ECOM_PUBLIC_TOKEN;
+  const ecommercePrivateToken = process.env.CLOVER_ECOM_PRIVATE_TOKEN || accessToken;
 
   // Validate required fields
   if (!amount || !description) {
@@ -87,14 +90,18 @@ router.post('/checkout', async (req, res) => {
       description,
     });
 
-    // Step 3: Process payment (uses sandbox test card)
-    const payment = await clover.createPayment(
-      accessToken,
-      merchantId,
+    // Step 3: Tokenize an official Clover sandbox test card
+    const cardToken = await clover.tokenizeTestCard(ecommercePublicToken);
+
+    // Step 4: Pay the order with the documented Ecommerce API endpoint
+    const payment = await clover.payForOrder(
+      ecommercePrivateToken,
       order.id,
-      amountInCents
+      cardToken.id,
+      amountInCents,
+      req.ip
     );
-    
+
     // Return transaction summary
     const result = {
       success: true,
@@ -105,16 +112,16 @@ router.post('/checkout', async (req, res) => {
         amount: `$${(amountInCents / 100).toFixed(2)}`,
         amountInCents,
         description,
-        status: payment.result || 'UNKNOWN',
+        status: payment.status || payment.result || 'UNKNOWN',
         createdAt: new Date().toISOString(),
       },
-      raw: { order, lineItem, payment },
+      raw: { order, lineItem, tokenizedCard: cardToken.card, payment },
     };
 
     logger.info('Checkout completed', {
       paymentId: payment.id,
       orderId: order.id,
-      status: payment.result,
+      status: payment.status || payment.result,
     });
 
     res.json(result);
@@ -147,7 +154,7 @@ router.post('/checkout', async (req, res) => {
 //  Create an empty order (no line items yet).
 // ─────────────────────────────────────────────────────────────
 router.post('/orders', async (req, res) => {
-  const accessToken =  getAccessToken(req);
+  const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
 
   try {
@@ -167,7 +174,7 @@ router.post('/orders', async (req, res) => {
 //  Fetch an order with its line items expanded.
 // ─────────────────────────────────────────────────────────────
 router.get('/orders/:id', async (req, res) => {
-  const accessToken =  getAccessToken(req);
+  const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
 
   try {
@@ -189,7 +196,7 @@ router.get('/orders/:id', async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/orders/:id/items', async (req, res) => {
   const { amount, description } = req.body;
-  const accessToken =  getAccessToken(req);
+  const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
 
   if (!amount || !description) {
@@ -214,12 +221,12 @@ router.post('/orders/:id/items', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  POST /api/payments
-//  Create a payment against an existing order.
+//  Tokenize a sandbox test card and pay an existing order.
 //  Body: { "orderId": "ORDER_ID", "amount": 22.00 }
 // ─────────────────────────────────────────────────────────────
 router.post('/payments', async (req, res) => {
   const { orderId, amount } = req.body;
-  const accessToken =  getAccessToken(req);
+  const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
 
   if (!orderId || !amount) {
@@ -228,13 +235,14 @@ router.post('/payments', async (req, res) => {
 
   try {
     const amountInCents = parseToCents(amount);
-    const payment = await clover.createPayment(
-      accessToken,
-      merchantId,
+    const cardToken = await clover.tokenizeTestCard(process.env.CLOVER_ECOM_PUBLIC_TOKEN);
+    const payment = await clover.payForOrder(
+      process.env.CLOVER_ECOM_PRIVATE_TOKEN || accessToken,
       orderId,
-      amountInCents
+      cardToken.id,
+      amountInCents,
+      req.ip
     );
-     
     res.json({ success: true, payment });
   } catch (err) {
     logger.error('Create payment failed', { message: err.message });
@@ -250,7 +258,7 @@ router.post('/payments', async (req, res) => {
 //  Fetch payment status and details.
 // ─────────────────────────────────────────────────────────────
 router.get('/payments/:id', async (req, res) => {
-  const accessToken =  getAccessToken(req);
+  const accessToken = getAccessToken(req);
   const { merchantId } = req.session;
 
   try {
@@ -258,7 +266,7 @@ router.get('/payments/:id', async (req, res) => {
     res.json({
       success: true,
       paymentId: payment.id,
-      status: payment.result,
+      status: payment.status || payment.result,
       amount: payment.amount,
       createdTime: payment.createdTime,
       payment,

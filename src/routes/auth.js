@@ -52,11 +52,12 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-   const { access_token, merchant_id } = await exchangeCodeForToken(code);
+    const { access_token, merchant_id } = await exchangeCodeForToken(code);
+
     // Store in server-side session (never exposed to the browser)
     req.session.accessToken = access_token;
     req.session.merchantId = merchant_id || merchantIdFromQuery;
-   
+
     // Explicitly save before redirecting to prevent race condition
     // where the redirect fires before the session is written to store
     req.session.save((err) => {

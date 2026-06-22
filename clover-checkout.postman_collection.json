@@ -1,0 +1,341 @@
+{
+  "info": {
+    "name": "Clover Checkout Demo",
+    "description": "Postman collection for the Clover Payment Gateway integration.\n\nFlow:\n1. OAuth2 login (browser only — open /auth/login in browser)\n2. Check auth status\n3. Run checkout (creates order + line item + tokenizes card + pays)\n\nAll requests hit localhost:3000. Session cookie is handled automatically by Postman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "OAuth2 authentication routes",
+      "item": [
+        {
+          "name": "1. Login (open in browser)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "⚠️ Open this URL in your browser — do NOT run in Postman.\nIt redirects to Clover's OAuth login page.\nAfter login, Clover redirects back to /auth/callback which sets your session cookie.\n\nURL: http://localhost:3000/auth/login"
+          }
+        },
+        {
+          "name": "2. Check Auth Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/status",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "status"]
+            },
+            "description": "Returns whether the session is authenticated and the merchant ID.\n\nResponse (authenticated):\n{\n  \"authenticated\": true,\n  \"merchantId\": \"36291GPFHPV71\"\n}\n\nResponse (not authenticated):\n{\n  \"authenticated\": false\n}\n\nDocs: OAuth2 flow — https://docs.clover.com/dev/docs/oauth-flows-in-sandbox"
+          },
+          "response": [
+            {
+              "name": "Authenticated",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"authenticated\": true,\n  \"merchantId\": \"36291GPFHPV71\"\n}"
+            },
+            {
+              "name": "Not Authenticated",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"authenticated\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Logout",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Destroys the server-side session and clears the session cookie."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"message\": \"Logged out successfully\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Checkout",
+      "description": "One-shot full payment flow",
+      "item": [
+        {
+          "name": "Full Checkout (Order + Line Item + Tokenize + Pay)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.transaction) {",
+                  "  pm.collectionVariables.set('order_id', res.transaction.orderId);",
+                  "  pm.collectionVariables.set('payment_id', res.transaction.paymentId);",
+                  "  console.log('Order ID saved:', res.transaction.orderId);",
+                  "  console.log('Payment ID saved:', res.transaction.paymentId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 66.00,\n  \"description\": \"Wireless Mouse\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "checkout"]
+            },
+            "description": "Runs the complete documented payment flow in one call:\n\nStep 1 — Create order\n  POST /v3/merchants/{mId}/orders\n  Docs: https://docs.clover.com/dev/reference/ordercreateorder\n\nStep 2 — Add line item\n  POST /v3/merchants/{mId}/orders/{orderId}/line_items\n  Docs: https://docs.clover.com/dev/reference/ordercreatelineitemsfororder\n\nStep 3 — Tokenize sandbox test card\n  POST https://token-sandbox.dev.clover.com/v1/tokens\n  Docs: https://docs.clover.com/dev/docs/ecommerce-api-payments-flow\n\nStep 4 — Pay for order\n  POST https://scl-sandbox.dev.clover.com/v1/orders/{orderId}/pay\n  Docs: https://docs.clover.com/dev/reference/postordersidpay\n\nSaves orderId and paymentId to collection variables automatically."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"transaction\": {\n    \"orderId\": \"KQRTE6VFJA8BJ\",\n    \"lineItemId\": \"H4EDSZHZX72JP\",\n    \"paymentId\": \"KQRTE6VFJA8BJ\",\n    \"amount\": \"$66.00\",\n    \"amountInCents\": 6600,\n    \"description\": \"Wireless Mouse\",\n    \"status\": \"paid\",\n    \"createdAt\": \"2026-06-21T23:05:15.000Z\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Individual order endpoints\nDocs: https://docs.clover.com/dev/reference/ordercreateorder",
+      "item": [
+        {
+          "name": "Create Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.order) {",
+                  "  pm.collectionVariables.set('order_id', res.order.id);",
+                  "  console.log('Order ID saved:', res.order.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Creates an empty order.\n\nClover endpoint: POST /v3/merchants/{mId}/orders\nDocs: https://docs.clover.com/dev/reference/ordercreateorder\n\nSaves orderId to collection variable automatically."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"order\": {\n    \"id\": \"KQRTE6VFJA8BJ\",\n    \"state\": \"open\",\n    \"title\": \"Web Checkout\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add Line Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 66.00,\n  \"description\": \"Wireless Mouse\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}", "items"]
+            },
+            "description": "Adds a line item (product name + price) to an existing order.\n\nClover endpoint: POST /v3/merchants/{mId}/orders/{orderId}/line_items\nDocs: https://docs.clover.com/dev/reference/ordercreatelineitemsfororder\n\nUses {{order_id}} from collection variable — run 'Create Order' first."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"lineItem\": {\n    \"id\": \"H4EDSZHZX72JP\",\n    \"name\": \"Wireless Mouse\",\n    \"price\": 6600\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}"]
+            },
+            "description": "Fetches order details with line items and payments expanded.\n\nClover endpoint: GET /v3/merchants/{mId}/orders/{orderId}?expand=lineItems,payments\nDocs: https://docs.clover.com/dev/reference/ordergetorder\n\nUses {{order_id}} from collection variable."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"order\": {\n    \"id\": \"KQRTE6VFJA8BJ\",\n    \"state\": \"paid\",\n    \"total\": 6600,\n    \"lineItems\": { \"elements\": [] },\n    \"payments\": { \"elements\": [] }\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "description": "Individual payment endpoints",
+      "item": [
+        {
+          "name": "Tokenize + Pay Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.payment) {",
+                  "  pm.collectionVariables.set('payment_id', res.payment.id);",
+                  "  console.log('Payment ID saved:', res.payment.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{order_id}}\",\n  \"amount\": 66.00\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments"]
+            },
+            "description": "Tokenizes the sandbox test card and pays an existing order.\n\nStep 1 — Tokenize card:\n  POST https://token-sandbox.dev.clover.com/v1/tokens\n  Docs: https://docs.clover.com/dev/docs/ecommerce-api-payments-flow\n\nStep 2 — Pay for order:\n  POST https://scl-sandbox.dev.clover.com/v1/orders/{orderId}/pay\n  Docs: https://docs.clover.com/dev/reference/postordersidpay\n\nUses {{order_id}} from collection variable — run 'Create Order' first.\nSaves paymentId to collection variable automatically."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"payment\": {\n    \"id\": \"KQRTE6VFJA8BJ\",\n    \"status\": \"paid\",\n    \"amount\": 6600\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Payment Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/payments/{{payment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "{{payment_id}}"]
+            },
+            "description": "Fetches payment status and details by payment ID.\n\nClover endpoint: GET /v3/merchants/{mId}/payments/{paymentId}\nDocs: https://docs.clover.com/dev/docs/get-all-payments\n\nUses {{payment_id}} from collection variable."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"paymentId\": \"KQRTE6VFJA8BJ\",\n  \"status\": \"paid\",\n  \"amount\": 6600\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Simple health check — confirms the server is running."
+      },
+      "response": [
+        {
+          "name": "Success",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"status\": \"ok\",\n  \"timestamp\": \"2026-06-21T23:00:00.000Z\"\n}"
+        }
+      ]
+    }
+  ]
+}

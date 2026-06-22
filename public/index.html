@@ -190,8 +190,9 @@
 
       if (res.ok && data.success) {
         var tx = data.transaction;
-        var badgeClass = tx.status === 'SUCCESS' ? 'SUCCESS'
-                       : tx.status === 'FAIL' ? 'FAIL' : 'UNKNOWN';
+        var normalizedStatus = String(tx.status || '').toUpperCase();
+        var badgeClass = ['SUCCESS', 'SUCCEEDED', 'PAID', 'CAPTURED'].includes(normalizedStatus) ? 'SUCCESS'
+                       : ['FAIL', 'FAILED', 'DECLINED'].includes(normalizedStatus) ? 'FAIL' : 'UNKNOWN';
 
         resultEl.className = 'success';
         resultEl.innerHTML =
